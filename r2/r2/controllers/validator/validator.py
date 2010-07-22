@@ -823,6 +823,8 @@ class VUrl(VRequired):
                 return url
         elif not self.lookup:
             return url
+        elif not utils.verify_url(url):
+            return self.error(errors.BAD_URL)
         elif url:
             try:
                 l = Link._by_url(url, sr)

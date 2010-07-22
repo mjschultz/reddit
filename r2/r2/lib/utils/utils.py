@@ -304,6 +304,23 @@ def sanitize_url(url, require_scheme = False):
                     return
         return url
 
+def verify_url(url, timeout = 15):
+    """Verifies that the URL actually exists using built-in urllib2.urlopen.
+    If we can't verify the existence within timeout (default: 15) seconds,
+    we'll assume that the URL doesn't exist."""
+
+    if not url:
+        return
+
+    try:
+        # if we can open the url, then we've verified
+        verifier = urlopen(url, timeout=timeout)
+        verifier.close()
+    except:
+        return None
+
+    return url
+
 # Truncate a time to a certain number of minutes
 # e.g, trunc_time(5:52, 30) == 5:30
 def trunc_time(time, mins, hours=None):
