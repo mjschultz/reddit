@@ -51,6 +51,7 @@ class Subreddit(Thing, Printable):
                      stylesheet_hash     = '0',
                      firsttext = strings.firsttext,
                      header = None,
+                     header_title = "",
                      allow_top = False, # overridden in "_new"
                      description = '',
                      images = {},
@@ -65,7 +66,6 @@ class Subreddit(Thing, Printable):
                      sponsorship_url = None,
                      sponsorship_img = None,
                      sponsorship_name = None,
-
                      # do we allow self-posts, links only, or any?
                      link_type = 'any', # one of ('link', 'self', 'any')
                      )
@@ -99,6 +99,9 @@ class Subreddit(Thing, Printable):
                 Subreddit._by_name(name, _update = True)
                 return sr
 
+
+    _specials = {}
+    
     @classmethod
     def _by_name(cls, names, _update = False):
         #lower name here so there is only one cache
@@ -107,18 +110,11 @@ class Subreddit(Thing, Printable):
         to_fetch = {}
         ret = {}
 
-        _specials = dict(friends = Friends,
-                         randnsfw = RandomNSFW,
-                         random = Random,
-                         mod = Mod,
-                         contrib = Contrib,
-                         all = All)
-
         for name in names:
             lname = name.lower()
 
-            if lname in _specials:
-                ret[name] = _specials[lname]
+            if lname in cls._specials:
+                ret[name] = cls._specials[lname]
             else:
                 to_fetch[lname] = name
 
@@ -156,7 +152,6 @@ class Subreddit(Thing, Printable):
     @memoize('subreddit._by_domain')
     def _by_domain_cache(cls, name):
         q = cls._query(cls.c.domain == name,
-                       cls.c.over_18 == (True, False),
                        limit = 1)
         l = list(q)
         if l:
@@ -318,7 +313,7 @@ class Subreddit(Thing, Printable):
 
     def get_all_comments(self):
         from r2.lib.db import queries
-        return queries.get_all_comments()
+        return queries.get_sr_comments(self)
 
 
     @classmethod
@@ -599,6 +594,10 @@ class FakeSubreddit(Subreddit):
     def is_banned(self, user):
         return False
 
+    def get_all_comments(self):
+        from r2.lib.db import queries
+        return queries.get_all_comments()
+
 class FriendsSR(FakeSubreddit):
     name = 'friends'
     title = 'friends'
@@ -707,11 +706,15 @@ class AllSR(FakeSubreddit):
             q._filter(queries.db_times[time])
         return q
 
+    def get_all_comments(self):
+        from r2.lib.db import queries
+        return queries.get_all_comments()
+
     def rising_srs(self):
         return None
 
 
-class DefaultSR(FakeSubreddit):
+class _DefaultSR(FakeSubreddit):
     #notice the space before reddit.com
     name = ' reddit.com'
     path = '/'
@@ -744,13 +747,54 @@ class DefaultSR(FakeSubreddit):
 
     @property
     def title(self):
-        return _("reddit.com: what's new online!")
+        return _("reddit: the voice of the internet -- news before it happens")
 
-class MultiReddit(DefaultSR):
+# This is the base class for the instantiated front page reddit
+class DefaultSR(_DefaultSR):
+    def __init__(self):
+        _DefaultSR.__init__(self)
+        try:
+            self._base = Subreddit._by_name(g.default_sr)
+        except NotFound:
+            self._base = None
+
+    @property
+    def _fullname(self):
+        return "default"
+
+    @property
+    def header(self):
+        return (self._base and self._base.header) or _DefaultSR.header
+
+
+    @property
+    def header_title(self):
+        return (self._base and self._base.header_title) or ""
+
+    @property
+    def stylesheet_contents(self):
+        return self._base.stylesheet_contents if self._base else ""
+
+    @property
+    def sponsorship_url(self):
+        return self._base.sponsorship_url if self._base else ""
+
+    @property
+    def sponsorship_text(self):
+        return self._base.sponsorship_text if self._base else ""
+
+    @property
+    def sponsorship_img(self):
+        return self._base.sponsorship_img if self._base else ""
+
+
+
+class MultiReddit(_DefaultSR):
     name = 'multi'
+    header = ""
 
     def __init__(self, sr_ids, path):
-        DefaultSR.__init__(self)
+        _DefaultSR.__init__(self)
         self.real_path = path
         self.sr_ids = sr_ids
 
@@ -764,13 +808,21 @@ class MultiReddit(DefaultSR):
     def rising_srs(self):
         return self.sr_ids
 
+    def get_all_comments(self):
+        from r2.lib.db.queries import get_sr_comments, merge_results
+        srs = Subreddit._byID(self.sr_ids, return_dict=False)
+        results = [get_sr_comments(sr) for sr in srs]
+        return merge_results(*results)
+
 class RandomReddit(FakeSubreddit):
     name = 'random'
+    header = ""
 
 class RandomNSFWReddit(FakeSubreddit):
     name = 'randnsfw'
+    header = ""
 
-class ModContribSR(DefaultSR):
+class ModContribSR(_DefaultSR):
     name  = None
     title = None
     query_param = None
@@ -841,9 +893,15 @@ Friends = FriendsSR()
 Mod = ModSR()
 Contrib = ContribSR()
 All = AllSR()
-Default = DefaultSR()
 Random = RandomReddit()
 RandomNSFW = RandomNSFWReddit()
+
+Subreddit._specials.update(dict(friends = Friends,
+                                randnsfw = RandomNSFW,
+                                random = Random,
+                                mod = Mod,
+                                contrib = Contrib,
+                                all = All))
 
 class SRMember(Relation(Subreddit, Account)): pass
 Subreddit.__bases__ += (UserRel('moderator', SRMember),

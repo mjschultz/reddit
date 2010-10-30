@@ -491,7 +491,7 @@ class UrlParser(object):
         On failure to find a subreddit, returns None.
         """
         from pylons import g
-        from r2.models import Subreddit, Sub, NotFound, Default
+        from r2.models import Subreddit, Sub, NotFound, DefaultSR
         try:
             if not self.hostname or self.hostname.startswith(g.domain):
                 if self.path.startswith('/r/'):
@@ -499,7 +499,7 @@ class UrlParser(object):
                 elif self.path.startswith('/reddits/'):
                     return Sub
                 else:
-                    return Default
+                    return DefaultSR()
             elif self.hostname:
                 return Subreddit._by_domain(self.hostname)
         except NotFound:
@@ -538,7 +538,7 @@ class UrlParser(object):
         """
         if not self.hostname:
             return ""
-        elif self.port:
+        elif getattr(self, "port", None):
             return self.hostname + ":" + str(self.port)
         return self.hostname
 
@@ -1241,3 +1241,18 @@ def strordict_fullname(item, key='fullname'):
                          % (item, d))
 
     return d
+
+def thread_dump(*a):
+    import sys, traceback
+    from datetime import datetime
+
+    sys.stderr.write('%(t)s Thread Dump @%(d)s %(t)s\n' % dict(t='*'*15,
+                                                               d=datetime.now()))
+
+    for thread_id, stack in sys._current_frames().items():
+        sys.stderr.write('\t-- Thread ID: %s--\n' %  (thread_id,))
+
+        for filename, lineno, fnname, line in traceback.extract_stack(stack):
+            sys.stderr.write('\t\t%(filename)s(%(lineno)d): %(fnname)s\n'
+                             % dict(filename=filename, lineno=lineno, fnname=fnname))
+            sys.stderr.write('\t\t\t%(line)s\n' % dict(line=line))
